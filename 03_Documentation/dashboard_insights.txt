@@ -1,0 +1,626 @@
+================================================================================
+OLIST BRAZILIAN E-COMMERCE - BUSINESS ANALYSIS DASHBOARD INSIGHTS
+================================================================================
+
+Project      : Olist Brazilian E-Commerce Data Engineering & Analytics
+Platform     : Databricks (PySpark, Spark SQL, Delta Lake, Unity Catalog)
+Pipeline     : Medallion architecture (Bronze -> Silver -> Gold)
+Dashboard    : "Olist E-Commerce Analytics" (2 pages:
+                Page 1 - Executive Overview;
+                Page 2 - Product, Customer & Seller Insights)
+Data period  : September 2016 to 17 October 2018
+Currency     : Brazilian Real (R$ / BRL) - all monetary figures below
+
+All figures in this document were verified directly against the Gold tables
+in the workspace.olist schema (Databricks Unity Catalog) on 22 November 2026,
+using the same metric definitions as the dashboard datasets:
+  - gold_order_analytics          (order-level metrics; basis of KPI cards)
+  - golden_order_summary          (per-order item, price and freight totals)
+  - gold_category_performance     (category revenue, units, average price)
+  - gold_product_analytics         (per-product revenue and units)
+  - gold_customer_analytics        (customer-level metrics by customer_unique_id)
+  - gold_seller_analytics          (per-seller revenue and volume)
+  - gold_seller_state_performance  (seller revenue by state)
+  - silver_orders                  (order counts and status distribution)
+
+Note: the Gold layer holds one further table, monthly_orders (monthly order
+counts, 25 rows, written by the 03_gold_analytics notebook), which this
+document did not need - the dashboard's monthly trend reads silver_orders
+directly. workspace.olist.incremental_orders_demo is a demonstration table
+from the validation notebook, not an analytical Gold output. In total the
+pipeline produces 8 Gold tables in this schema; the figures in this document
+come from the 7 Gold tables listed above plus silver_orders.
+
+Table grains and unique keys (as implemented in the Gold aggregations):
+  - gold_order_analytics, golden_order_summary: one row per order_id
+  - gold_product_analytics: one row per product_id
+  - gold_category_performance: one row per product_category_name (74 rows,
+    73 named categories plus one NULL-category row)
+  - gold_customer_analytics: one row per customer_unique_id
+  - gold_seller_analytics: one row per seller_id
+  - gold_seller_state_performance: one row per seller_state
+  - monthly_orders: one row per (order_year, order_month)
+  - silver_order_items: one row per (order_id, order_item_id)
+Uniqueness therefore follows each table's own grain - order_id is the key of
+the order-level tables only, not of every table. The substantive check that
+no join has duplicated or lost value is the reconciliation of the Gold
+revenue, freight and order-value totals (R$ 13,591,643.70 / R$ 2,251,909.54 /
+R$ 15,843,553.24) against the silver_order_items source, which matches
+exactly - not row-count equality alone.
+
+--------------------------------------------------------------------------------
+KEY METRIC DEFINITIONS (as implemented in the dashboard and Gold layer)
+--------------------------------------------------------------------------------
+* Total Revenue       = SUM(total_price): the product price of the items in an
+                        order. EXCLUDES freight.
+* Total Freight       = SUM(total_freight_value): the freight charged on the
+                        items in an order. EXCLUDES product price.
+* Total Order Value   = SUM(total_item_value) = product price + freight.
+* Average Order Value = AVG(total_item_value) = average order value INCLUDING
+                        freight, across orders that have item records.
+* Revenue, freight and order-value totals are computed only over the 98,666
+  orders that have matching order-item records (see Section H for the 775
+  orders without item data).
+* Average Delivery Time = AVG(delivery_days), the difference in days between
+  order_purchase_timestamp and order_delivered_customer_date, for delivered
+  orders where this can be computed.
+
+================================================================================
+A. EXECUTIVE SUMMARY
+================================================================================
+
+Between September 2016 and October 2018 the dataset records 99,441 orders,
+of which 96,478 (97.02%) reached the customer with status 'delivered'.
+
+  Total orders ................. 99,441
+  Delivered orders ............. 96,478  (97.02% of all orders)
+  Total revenue (excl. freight)  R$ 13,591,643.70
+  Total freight ................. R$  2,251,909.54
+  Total order value (incl. freight) R$ 15,843,553.24
+  Average order value (incl. freight) R$ 160.58
+  Average delivery time ........ 12.5 days
+
+Note the deliberate distinction between the two monetary headline figures:
+
+* Revenue (R$ 13,591,643.70) is product price only and EXCLUDES freight.
+* Total order value (R$ 15,843,553.24) is product price plus freight; it equals
+  revenue + freight exactly (13,591,643.70 + 2,251,909.54 = 15,843,553.24).
+
+Freight accounts for R$ 2,251,909.54, or 14.21% of total order value - a
+material share of what customers pay in total. The average order value of
+R$ 160.58 includes freight because it is the average of per-order price plus
+freight; the average product-only order value is correspondingly lower.
+
+The operation is overwhelmingly a delivery-success story at first glance
+(97.02% delivered), but Section C shows that roughly 1 in 12 delivered orders
+arrived after the estimated delivery date, which is the more relevant
+service-quality signal in this dataset.
+
+
+================================================================================
+B. ORDER ANALYSIS
+================================================================================
+
+B.1 Monthly order trend (distinct orders per month, silver_orders)
+-----------------------------------------------------------------------------
+
+  Month      Orders      Month      Orders      Month      Orders
+  2016-09        4      2017-07    4,026      2018-02    6,728
+  2016-10      324      2017-08    4,331      2018-03    7,211
+  2016-11        0      2017-09    4,285      2018-04    6,939
+  2016-12        1      2017-10    4,631      2018-05    6,873
+  2017-01      800      2017-11    7,544      2018-06    6,167
+  2017-02    1,780      2017-12    5,673      2018-07    6,292
+  2017-03    2,682      2018-01    7,269      2018-08    6,512
+  2017-04    2,404                  (2018-09: 16; 2018-10: 4)
+  2017-05    3,700
+  2017-06    3,245
+
+Observations:
+
+* Strong growth: monthly volume grew roughly eight-fold, from 800 orders in
+  January 2017 to 6,512 in August 2018 (the last full month).
+* The peak month is November 2017 with 7,544 orders. The busiest single day
+  in the entire dataset is 24 November 2017 with 1,176 orders - Black Friday.
+  The second-busiest day is the following day (25 November 2017, 499 orders).
+* After the Black Friday month, volume settled into a stable 6,200-7,300
+  orders/month band for January-August 2018, with no repeat of the November
+  2017 spike (no November 2018 data exists to confirm seasonality).
+* Incomplete months at the edges: 2016-09 has only 4 orders, 2016-11 has none,
+  2016-12 has 1 order, and the dataset ends mid-month (2018-09: 16 orders,
+  2018-10: 4 orders, last purchase 17 October 2018). Month-over-month
+  comparisons should exclude these edge months.
+
+B.2 Order status distribution (distinct orders, silver_orders)
+-----------------------------------------------------------------------------
+
+  Status        Orders     Share
+  delivered    96,478     97.02%
+  shipped       1,107      1.11%
+  canceled        625      0.63%
+  unavailable     609      0.61%
+  invoiced        314      0.32%
+  processing     301      0.30%
+  created           5      0.01%
+  approved           2      0.00%
+
+Delivered versus non-delivered: 96,478 orders (97.02%) are delivered and
+2,963 orders (2.98%) are in a non-delivered status (shipped, canceled,
+unavailable, invoiced, processing, created, approved).
+
+Interpretation (observation-based, not causal):
+
+* canceled + unavailable = 1,234 orders (1.24% of all orders). Some of these
+  are concentrated in the 775 orders without item records (Section H),
+  suggesting a link between order cancellation/unavailability and the absence
+  of item data, though the dataset does not tell us the direction of cause.
+* Non-delivered statuses occur throughout the period, not only at its end:
+  shipped orders span September 2016 to September 2018, and only 151 of the
+  1,107 shipped orders (and 39 of the 314 invoiced orders) were placed from
+  June 2018 onwards. Some orders purchased close to the 17 October 2018
+  cutoff would plausibly have been delivered after the data ends, but they
+  are a small minority and this cannot be confirmed from the data.
+
+
+================================================================================
+C. DELIVERY PERFORMANCE
+================================================================================
+
+C.1 On-time versus late delivery
+-----------------------------------------------------------------------------
+Denominator (important): the classification covers DELIVERED orders that have
+BOTH a customer delivery date and an estimated delivery date. Of the 96,478
+delivered orders, 8 have no order_delivered_customer_date (none are missing
+the estimated date). The classification denominator is therefore 96,470
+delivered orders:
+
+  On-time (delivered on or before the estimate): 88,644 orders  = 91.89%
+  Late (delivered after the estimate):             7,826 orders  =  8.11%
+
+An order is counted on time when order_delivered_customer_date <=
+order_estimated_delivery_date. As a share of ALL 96,478 delivered orders, the
+on-time rate is 91.88% (the 8 unclassified orders are less than 0.01% of the
+total, so the two bases differ by only 0.01 percentage points).
+
+C.2 Average delivery time
+-----------------------------------------------------------------------------
+Average delivery time is 12.5 days from purchase timestamp to customer
+delivery, computed over the 96,470 delivered orders where delivery days can be
+measured (it matches the dashboard KPI exactly).
+
+C.3 Potential operational implications (interpretation, to be validated)
+-----------------------------------------------------------------------------
+* Roughly 1 in 12 delivered orders (8.11%) misses the promise date. If review
+  scores were available, one could test whether late deliveries coincide with
+  poor reviews - the review dataset exists in the raw source data but was not
+  ingested in this pipeline, so this remains a hypothesis, not a finding.
+* It is not yet clear whether lateness is concentrated in particular sellers,
+  product categories, customer regions or carriers: seller and customer states
+  are available, but geolocation and carrier data were not ingested.
+* The 12.5-day average delivery is long relative to many e-commerce markets,
+  but expected for Brazilian cross-state logistics; no benchmark claim is made
+  here.
+
+
+================================================================================
+D. PRODUCT AND CATEGORY ANALYSIS
+================================================================================
+The category analysis covers 73 named categories (74 rows in
+gold_category_performance including one NULL category row). Revenue with no category name amounts to R$ 179,535.28 (1.32% of category revenue), and 610
+of the 32,951 products in gold_product_analytics lack a category.
+
+Metric note: a category's avg_selling_price is calculated in the Gold layer
+as category total_revenue / total_units_sold - the average price per unit
+actually sold, weighted by volume - not the mean of product-level prices.
+Category "average prices" quoted below follow this definition.
+
+D.1 Top 10 categories by revenue (gold_category_performance)
+-----------------------------------------------------------------------------
+  Rank  Category                  Revenue (R$)   Units sold
+   1    beleza_saude               1,258,681.34      9,670
+   2    relogios_presentes         1,205,005.68      5,991
+   3    cama_mesa_banho            1,036,988.68     11,115
+   4    esporte_lazer                988,048.97      8,641
+   5    informatica_acessorios      911,954.32      7,827
+   6    moveis_decoracao            729,762.49      8,334
+   7    cool_stuff                  635,290.85      3,796
+   8    utilidades_domesticas       632,248.66      6,964
+   9    automotivo                  592,720.11      4,235
+  10    ferramentas_jardim          485,256.46      4,347
+
+Together these ten categories generate R$ 8,475,957.56, or 62.36% of the
+R$ 13,591,643.70 total category revenue (this denominator includes the
+R$ 179,535.28 uncategorized share; measured against named-category revenue
+only, the top-10 share is 63.20%).
+
+D.2 Top 10 categories by units sold (gold_category_performance)
+-----------------------------------------------------------------------------
+  Rank  Category                  Units sold    Revenue (R$)
+   1    cama_mesa_banho              11,115      1,036,988.68
+   2    beleza_saude                  9,670      1,258,681.34
+   3    esporte_lazer                  8,641        988,048.97
+   4    moveis_decoracao               8,334        729,762.49
+   5    informatica_acessorios         7,827        911,954.32
+   6    utilidades_domesticas          6,964        632,248.66
+   7    relogios_presentes             5,991      1,205,005.68
+   8    telefonia                     4,545        323,667.53
+   9    ferramentas_jardim             4,347        485,256.46
+  10    automotivo                     4,235        592,720.11
+
+D.3 Categories with the highest average selling price (top 10)
+-----------------------------------------------------------------------------
+  Rank  Category                               Avg price (R$)   Units sold
+   1    pcs                                        1,098.34          203
+   2    portateis_casa_forno_e_cafe                  624.29           76
+   3    eletrodomesticos_2                          476.12          238
+   4    agro_industria_e_comercio                   342.12          212
+   5    instrumentos_musicais                        281.62          680
+   6    eletroportateis                              280.78          679
+   7    portateis_cozinha_e_preparadores_           264.57           15
+        alimentos
+   8    telefonia_fixa                               225.69          264
+   9    construcao_ferramentas_seguranca             208.99          194
+  10    relogios_presentes                           201.14        5,991
+
+D.4 What the comparison indicates (interpretation)
+-----------------------------------------------------------------------------
+* High-revenue and high-volume rankings overlap heavily (9 of 10 categories
+  appear in both lists), but the order differs. cama_mesa_banho (bed, table
+  and bath) leads units (11,115) at a low average price of R$ 93.30, while
+  beleza_saude (health and beauty) leads revenue (R$ 1,258,681.34) on a
+  higher average price of R$ 130.16.
+* relogios_presentes (watches and gifts) is the clearest premium-volume case:
+  it ranks 2nd by revenue (R$ 1,205,005.68) with only 5,991 units, at an
+  average price of R$ 201.14 (also 10th by average price).
+* telefonia sells 4,545 units (8th by volume) but only R$ 323,667.53 in
+  revenue - high volume, low ticket, and absent from the revenue top 10.
+* The highest average-price categories (pcs at R$ 1,098.34, computers;
+  portateis_casa_forno_e_cafe at R$ 624.29) sell in small volumes (203 and 76
+  units). They are niche, high-ticket categories rather than revenue drivers;
+  pcs generates R$ 222,963.13 in total, far below the top categories.
+
+For assortment and sales strategy this suggests two distinct roles in the
+catalog: broad, low-ticket categories (cama_mesa_banho, utilidades_domesticas,
+moveis_decoracao) drive traffic and units, while mid-to-high-ticket categories
+(beleza_saude, relogios_presentes, informatica_acessorios) drive revenue.
+This is an observation about the current mix; revenue is not profit - no cost
+or margin data exists in this dataset, so no profitability conclusions are
+drawn.
+
+At product level (gold_product_analytics, 32,951 products, 112,650 units sold,
+R$ 13,591,643.70 revenue), the top product (a beleza_saude item) contributes
+R$ 63,885.00 from 195 units - well under 0.5% of revenue - showing that
+category strength comes from many products rather than a single blockbuster.
+
+
+================================================================================
+E. CUSTOMER ANALYSIS
+================================================================================
+
+Customer identity uses customer_unique_id (the same natural person across
+orders), NOT the order-specific customer_id. There are 99,441 orders but
+96,096 unique customers in gold_customer_analytics. In this table
+total_spending sums product price only (excludes freight), while
+avg_order_value averages total_item_value and therefore includes freight;
+both definitions follow the Gold table exactly.
+
+E.1 One-time versus repeat customers
+-----------------------------------------------------------------------------
+  One-time customers (1 order):  93,099   = 96.88%
+  Repeat customers (>1 order):    2,997   =  3.12%
+  Total unique customers:        96,096
+
+(Cross-check: per-customer total_orders summed across all 96,096 customers
+equals 99,441 - every order is attributed to exactly one unique customer.)
+
+Repeat customers account for R$ 778,821.97 of spending, or 5.73% of total
+revenue - they are 3.12% of customers but 5.73% of revenue, meaning the
+average repeat customer spends substantially more in total than the average
+one-time customer (observation; the dataset cannot explain why).
+
+E.2 Top 10 customers by spending (gold_customer_analytics)
+-----------------------------------------------------------------------------
+  Rank  customer_unique_id                   Orders  Spending (R$)  Items
+   1    0a0a92112bd4c708ca5fde585afaa872         1      13,440.00      8
+   2    da122df9eeddfedc1dc1f5349a1a690c         2       7,388.00      2
+   3    763c8b1c9c68a0229c42c9fc6f662b93         1       7,160.00      4
+   4    dc4802a71eae9be1dd28f5d788ceb526         1       6,735.00      1
+   5    459bef486812aa25204be022145caa62         1       6,729.00      1
+   6    ff4159b92c40ebe40454e3e6a7c35ed6         1       6,499.00      1
+   7    4007669dec559734d6f53e029e360987         1       5,934.60      6
+   8    eeb5dda148d3893cdaf5b5ca3040ccb         1       4,690.00      1
+   9    5d0a2980b292d049061542014e8960bf         1       4,599.90      2
+  10    48e1ac109decbb87765a3eade6854098         1       4,590.00      1
+
+Note: total_spending sums product prices only (excludes freight), consistent
+with the revenue definition. For example, the top customer's single order had
+an order value including freight of R$ 13,664.08 versus R$ 13,440.00 in
+product spending.
+
+E.3 Customer spending patterns
+-----------------------------------------------------------------------------
+Of the 95,420 customers with measurable spending (676 customers have only
+orders without item data, so their spending is NULL - see Section H):
+
+  Spending band          Customers    Share of spending customers
+  Under R$ 200             79,859      83.7%
+  R$ 200 - 500             11,784      12.3%
+  R$ 500 - 1,000            2,799       2.9%
+  Over R$ 1,000               978       1.0%
+
+The average customer spends R$ 142.44 across the whole period. Spending is
+heavily skewed: 83.7% of customers spend under R$ 200 in total, and 9 of the
+10 top-spending customers made a single large purchase rather than many
+smaller ones.
+
+E.4 Repeat-customer share - what it does and does not mean
+-----------------------------------------------------------------------------
+The 3.12% repeat rate is a fact about this two-year dataset window, not a
+validated lifetime-value metric. Customers who first ordered near the end of
+the window had less time to place a repeat order, and purchases made through
+other channels are invisible here. The low repeat share is consistent with a
+marketplace model where each order gets a fresh customer_id unless linked by
+customer_unique_id, but the dataset provides no explanation of behaviour -
+only the measured counts.
+
+
+================================================================================
+F. SELLER ANALYSIS
+================================================================================
+
+F.1 Top 10 sellers by revenue (gold_seller_analytics, 3,095 sellers total)
+-----------------------------------------------------------------------------
+  Rank  seller_id                            State  Revenue (R$)  Orders
+   1    4869f7a5dfa277a7dca6462dcf3b52b2   SP       229,472.63   1,132
+   2    53243585a1d6dc2643021fd1853d8905   BA       222,776.05     358
+   3    4a3ca9315b744ce9f8e9374361493884   SP       200,472.92   1,806
+   4    fa1c13f2614d7b5c4749cbc52fecda94   SP       194,042.03     585
+   5    7c67e1448b00f6e969d365cea6b010ab   SP       187,923.89     982
+   6    7e93a43ef30c4f03f38b393420bc753a   SP       176,431.87     336
+   7    da8622b14eb17ae2831f4ac5b9dab84a   SP       160,236.57   1,314
+   8    7a67c85e85bb2ce8582c35f2203ad736   SP       141,745.53   1,160
+   9    1025f0e2d44d7041d6cf58b6550e0bfa   SP       138,968.55     915
+  10    955fee9216a65b617aa5c0531780ce60   SP       135,171.70   1,287
+
+Observations (no quality or performance claims - revenue alone cannot
+measure seller quality):
+
+* The top seller generates R$ 229,472.63 - only 1.69% of total revenue. The
+ten largest sellers together account for R$ 1,787,241.74, or 13.15% of
+revenue. With 3,095 sellers and an average revenue per seller of
+R$ 4,391.48, revenue is spread across a long tail rather than concentrated in
+a few top sellers.
+* Revenue models differ visibly: the top seller combines high volume (1,132
+orders), while seller #2 reaches R$ 222,776.05 from just 358 orders - a much
+higher per-order value. This is a description of their revenue mix, not a
+judgement of seller quality or efficiency.
+
+F.2 Revenue distribution by seller state (gold_seller_state_performance)
+-----------------------------------------------------------------------------
+  State  Sellers   Revenue (R$)     Share   Orders
+  SP      1,849     8,753,396.21    64.40%   70,188
+  PR        349     1,261,887.21     9.28%    7,673
+  MG        244     1,011,564.74     7.44%    7,930
+  RJ        171       843,984.22     6.21%    4,353
+  SC        190       632,426.07     4.65%    3,667
+  RS        129       378,559.54     2.79%    1,989
+  BA         19       285,561.56     2.10%      569
+  ... 16 further states with under 1% each ...
+
+Geographic pattern:
+
+* Sao Paulo (SP) dominates with 64.40% of revenue from 1,849 sellers (59.7%
+of all sellers). The top three states (SP, PR, MG) hold 81.12% of revenue.
+* Bahia (BA) is an interesting outlier: only 19 sellers but 2.10% of revenue,
+an average of R$ 15,029.56 per seller - more than three times the SP average
+of R$ 4,734.12 - driven largely by the single #2 seller (BA). This is a
+concentration observation, not evidence of seller performance.
+* Nine of the ten top-selling individual sellers are based in SP, consistent
+  with the state-level concentration.
+
+
+================================================================================
+G. KEY BUSINESS RECOMMENDATIONS
+================================================================================
+Each recommendation states what the data shows, why it matters, and what
+could be investigated or done. None of these is a causal claim.
+
+G.1 Investigate the 8.11% late-delivery segment before changing promises
+-----------------------------------------------------------------------------
+* Data: 7,826 of 96,470 classified delivered orders arrived after the
+  estimated date; average delivery time is 12.5 days.
+* Why it matters: the estimated delivery date is the customer's explicit
+  service expectation, and roughly 1 in 12 delivered orders misses it.
+  Whether lateness also drives dissatisfaction cannot be confirmed without
+  review data, which this pipeline does not ingest.
+* What to do: break the 7,826 late orders down by seller state, customer state,
+  category and month to see whether lateness is structural (e.g., long
+  SP-to-North/Northeast routes) or seller-specific. Ingesting the geolocation
+  and review datasets (present in the raw source, not in this pipeline) would
+  make this analysis possible. Only then consider adjusting estimated delivery
+  dates; the data here shows the gap, not the cause.
+
+G.2 Manage the catalog by category role: traffic drivers vs revenue drivers
+-----------------------------------------------------------------------------
+* Data: cama_mesa_banho leads units (11,115 at avg R$ 93.30) while
+  beleza_saude leads revenue (R$ 1,258,681.34 at avg R$ 130.16); the top 10
+  categories hold 62.36% of revenue; high-price categories (pcs, avg
+  R$ 1,098.34) are niche (203 units).
+* Why it matters: treating all categories with one strategy wastes the two
+clearly different roles in the mix.
+* What to do: evaluate merchandising, promotions and search placement per
+  category role; test whether high-volume low-ticket categories can be used
+  to attach or cross-sell higher-ticket items. Note that revenue is not
+  margin: no cost data exists, so validate against profitability before
+  acting.
+
+G.3 Build a proper repeat-purchase and retention view
+-----------------------------------------------------------------------------
+* Data: only 3.12% of the 96,096 unique customers ordered more than once in
+  the two-year window, yet they contribute 5.73% of revenue.
+* Why it matters: if the low repeat rate is real (not an artefact of the
+  customer_id / customer_unique_id design or the finite window), retention is
+  the largest available growth lever.
+* What to do: run a cohort analysis by first-purchase month to see whether
+  repeat behaviour improved as the marketplace matured; test post-purchase
+  and category-driven re-marketing on high-propensity segments (e.g.,
+  consumable categories such as beleza_saude). Confirm first that identity
+  linking is reliable before spending on retention programmes.
+
+G.4 Prepare operations for the Black Friday demand spike
+-----------------------------------------------------------------------------
+* Data: 24 November 2017 was the busiest day in the dataset (1,176 orders,
+  roughly 2.4x the next day), inside the peak month of 7,544 orders.
+* Why it matters: a single-day spike stresses picking, carrier handover and
+  delivery promises; late deliveries cluster when capacity is exceeded
+  (hypothesis to verify).
+* What to do: check November 2017 late-delivery rates against other months
+  with the existing Gold tables; use the spike to size seasonal capacity and
+  delivery-date buffers for promotional events. One observed season does not
+  prove a recurring seasonal pattern - only one November exists in the data.
+
+G.5 Use freight visibility in pricing and checkout decisions
+-----------------------------------------------------------------------------
+* Data: freight is R$ 2,251,909.54, 14.21% of total order value.
+* Why it matters: at this share, freight materially affects basket economics
+  and possibly purchase decisions (the dataset cannot show cart abandonment).
+* What to do: analyse freight as a share of order value by category and
+  customer state (available in the Gold tables) to find where freight is
+  heaviest relative to basket; consider free-shipping thresholds or
+  seller-state-to-customer-state routing. Any impact on demand must be tested,
+  not assumed.
+
+G.6 Balance seller geographic concentration risk
+-----------------------------------------------------------------------------
+* Data: 64.40% of revenue comes from SP-based sellers; SP, PR and MG together
+  hold 81.12%; BA shows outsized per-seller revenue (R$ 15,029.56 average vs
+  SP's R$ 4,734.12) driven by one seller.
+* Why it matters: heavy concentration in one state is an operational risk
+  (carrier disruption in SP affects two-thirds of revenue) and may lengthen
+  delivery distances to other regions - a plausible, untested link to the
+  late deliveries in G.1.
+* What to do: measure delivery time and lateness by seller-state to
+  customer-state pair using the existing Gold tables; if distance-related
+  lateness appears, investigate seller onboarding in other regions. No claim
+  of seller quality differences is made from revenue alone.
+
+G.7 Close the data-quality gaps that blur the KPIs
+-----------------------------------------------------------------------------
+* Data: 775 orders (0.78%) have no item records (603 unavailable, 164
+  canceled, 5 created, 2 invoiced, 1 shipped); 8 delivered orders lack the
+  customer delivery date; 610 of 32,951 products have no category; 1.32% of
+  revenue is uncategorised.
+* Why it matters: every unclassified or item-less order is revenue, volume
+  or delivery performance that the dashboard cannot see.
+* What to do: trace the 775 item-less orders upstream in the Bronze/Silver
+  layers to determine whether they are genuine cancellations or ingestion
+  gaps; add pipeline expectations (row counts, null checks on delivery dates
+  and categories) so these populations are monitored rather than discovered
+  by hand.
+
+
+================================================================================
+H. DATA LIMITATIONS AND ASSUMPTIONS
+================================================================================
+
+1. Historical dataset, not live data. The analysis covers purchases from
+   4 September 2016 to 17 October 2018. It says nothing about current
+   performance, and no external context (market conditions, marketing
+   spend, promotions other than Black Friday) is available.
+
+2. Incomplete months at the edges. 2016-09 (4 orders), 2016-11 (0 orders),
+   2016-12 (1 order), 2018-09 (16 orders) and 2018-10 (4 orders, ending
+   17 October) are partial months. Monthly-trend statements in this document
+   are based on the full months January 2017 - August 2018.
+
+3. 775 orders without matching order-item records (0.78% of 99,441 orders).
+   Their order statuses are: unavailable 603, canceled 164, created 5,
+   invoiced 2, shipped 1. They have NULL price, freight and item values, so
+   they are excluded from revenue, freight, order-value, average-order-value,
+   category, product, customer-spending and seller metrics (98,666 orders
+   carry item data). They ARE counted in total order counts and status
+   distribution.
+
+4. Eight delivered orders excluded from delivery classification. These 8
+   delivered orders (out of 96,478) have no order_delivered_customer_date;
+   none are missing the estimated delivery date. The on-time/late percentages
+   use the 96,470 delivered orders with both dates as the denominator. The
+   average of 12.5 delivery days is computed over the same 96,470 orders.
+
+5. 676 customers have NULL total spending. Every order they placed is one of
+   the 775 item-less orders, so no spending can be attributed to them. Customer
+   spending averages and bands in Section E cover the 95,420 customers with
+   measurable spending.
+
+6. Customer identity. Analysis uses customer_unique_id (96,096 unique
+   customers). The 99,441 per-order customer_id values would overstate the
+   customer count. Repeat-rate caveats are in Section E.4.
+
+7. No margin, cost, payment, review or geolocation data. The pipeline ingested
+   only the orders, order_items, products, customers and sellers datasets;
+   payments, reviews, geolocation and the category-name translation file
+   remain un-ingested. Profitability, customer satisfaction, shipping
+   distance and payment-mix claims cannot be made. Category names are in
+   Portuguese as delivered by the source.
+
+8. Incremental processing is a demonstration. The MERGE-based incremental
+   flow in 04_validation_optimization_sql writes only to the isolated
+   workspace.olist.incremental_orders_demo table. It demonstrates insert and
+   update batches (upserts) on this static historical dataset; it is not a
+   production change-data-capture (CDC) implementation, and no production
+   table is incrementally maintained - the pipeline is rebuilt with full
+   overwrites.
+
+9. Revenue versus order value. Revenue excludes freight; total order value and
+   average order value include freight. Freight represents 14.21% of total
+   order value (R$ 2,251,909.54 of R$ 15,843,553.24); relative to product
+   revenue alone (R$ 13,591,643.70), including freight raises the figure by
+   16.57%. Using total order value in place of revenue would therefore
+   overstate revenue by 16.57%, not 14.21%.
+
+10. Seller metrics reflect revenue and volume only. The 3,095-seller revenue
+    distribution says nothing about fulfilment quality, review scores or
+    profitability; those datasets are absent.
+
+11. Rounding. Currency figures are rounded to 2 decimal places, percentages
+    to 2 decimal places; small rounding differences can occur when re-adding
+    rounded components (e.g., status shares sum to 100.00 +/- 0.01).
+
+
+================================================================================
+I. CONCLUSION
+================================================================================
+
+Over roughly two years (Sep 2016 - Oct 2018) the Olist marketplace in this
+dataset processed 99,441 orders, delivered 97.02% of them, and moved
+R$ 13,591,643.70 in product revenue (R$ 15,843,553.24 including freight at
+14.21% of order value), at an average order value of R$ 160.58 and an average
+delivery time of 12.5 days.
+
+The three most decision-relevant findings are:
+
+1. Service quality: 91.89% of classified delivered orders met the estimated
+   delivery date, leaving 8.11% (7,826 orders) late - the clearest candidate
+   for operational investigation using the existing Gold tables.
+
+2. Catalog structure: revenue and volume are driven by different category
+   groups (beleza_saude and relogios_presentes vs cama_mesa_banho), and the
+   top 10 of 73 categories concentrate 62.36% of revenue - the assortment is
+   broad but not evenly weighted.
+
+3. Market structure: 96,096 unique customers are 96.88% one-time buyers;
+   3,095 sellers are geographically concentrated (64.40% of revenue in SP)
+   but not revenue-concentrated (top 10 sellers only 13.15%); the average
+   seller earns R$ 4,391.48 over the whole period.
+
+The value of the pipeline itself: a Bronze -> Silver -> Gold medallion flow
+built with PySpark, Spark SQL and Delta Lake turned five raw CSV files into
+eight governed, queryable Gold tables in Unity Catalog, from which the
+two-page dashboard and every figure in this document were produced with
+consistent, re-runnable definitions (revenue excluding freight, order value
+including it, customer identity by customer_unique_id, delivery classification
+on delivered orders with both dates). Each number above was verified against
+the Gold tables at the time of writing; the limitations in Section H define
+exactly what the data can and cannot support.
+
+--- END OF DOCUMENT ---

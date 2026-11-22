@@ -1,0 +1,1195 @@
+{
+  "datasets": [
+    {
+      "name": "96cf5c92",
+      "displayName": "executive_overview",
+      "queryLines": [
+        "SELECT\r\n",
+        "    COUNT(*) AS total_orders,\r\n",
+        "\r\n",
+        "    SUM(CASE\r\n",
+        "        WHEN order_status = 'delivered' THEN 1\r\n",
+        "        ELSE 0\r\n",
+        "    END) AS delivered_orders,\r\n",
+        "\r\n",
+        "    ROUND(SUM(total_price), 2) AS total_revenue,\r\n",
+        "\r\n",
+        "    ROUND(SUM(total_freight_value), 2) AS total_freight,\r\n",
+        "\r\n",
+        "    ROUND(SUM(total_item_value), 2) AS total_order_value,\r\n",
+        "\r\n",
+        "    ROUND(AVG(total_item_value), 2) AS avg_order_value,\r\n",
+        "\r\n",
+        "    ROUND(AVG(delivery_days), 2) AS avg_delivery_days\r\n",
+        "\r\n",
+        "FROM workspace.olist.gold_order_analytics;"
+      ]
+    },
+    {
+      "name": "04467d78",
+      "displayName": "monthly_order_trend",
+      "queryLines": [
+        "SELECT\r\n",
+        "    DATE_FORMAT(order_purchase_timestamp, 'yyyy-MM') AS order_month,\r\n",
+        "    COUNT(DISTINCT order_id) AS total_orders\r\n",
+        "FROM workspace.olist.silver_orders\r\n",
+        "GROUP BY DATE_FORMAT(order_purchase_timestamp, 'yyyy-MM')\r\n",
+        "ORDER BY order_month;"
+      ]
+    },
+    {
+      "name": "ef0b8383",
+      "displayName": "order_status_distribution",
+      "queryLines": [
+        "SELECT\r\n",
+        "    order_status,\r\n",
+        "    COUNT(DISTINCT order_id) AS total_orders\r\n",
+        "FROM workspace.olist.silver_orders\r\n",
+        "GROUP BY order_status\r\n",
+        "ORDER BY total_orders DESC;"
+      ]
+    },
+    {
+      "name": "178136e5",
+      "displayName": "delivery_performance",
+      "queryLines": [
+        "SELECT\r\n",
+        "    CASE\r\n",
+        "        WHEN order_delivered_customer_date\r\n",
+        "             <= order_estimated_delivery_date\r\n",
+        "        THEN 'On Time'\r\n",
+        "        WHEN order_delivered_customer_date\r\n",
+        "             > order_estimated_delivery_date\r\n",
+        "        THEN 'Late'\r\n",
+        "    END AS delivery_status,\r\n",
+        "\r\n",
+        "    COUNT(DISTINCT order_id) AS total_orders\r\n",
+        "\r\n",
+        "FROM workspace.olist.gold_order_analytics\r\n",
+        "\r\n",
+        "WHERE order_status = 'delivered'\r\n",
+        "  AND order_delivered_customer_date IS NOT NULL\r\n",
+        "  AND order_estimated_delivery_date IS NOT NULL\r\n",
+        "\r\n",
+        "GROUP BY\r\n",
+        "    CASE\r\n",
+        "        WHEN order_delivered_customer_date\r\n",
+        "             <= order_estimated_delivery_date\r\n",
+        "        THEN 'On Time'\r\n",
+        "        WHEN order_delivered_customer_date\r\n",
+        "             > order_estimated_delivery_date\r\n",
+        "        THEN 'Late'\r\n",
+        "    END;"
+      ]
+    },
+    {
+      "name": "8fa73f26",
+      "displayName": "category_performance_preview",
+      "queryLines": [
+        "SELECT *\r\n",
+        "FROM workspace.olist.gold_category_performance\r\n",
+        "LIMIT 10;"
+      ]
+    },
+    {
+      "name": "c80c2f96",
+      "displayName": "top_10_categories_revenue",
+      "queryLines": [
+        "SELECT\r\n",
+        "    product_category_name,\r\n",
+        "    total_revenue\r\n",
+        "FROM workspace.olist.gold_category_performance\r\n",
+        "WHERE product_category_name IS NOT NULL\r\n",
+        "ORDER BY total_revenue DESC\r\n",
+        "LIMIT 10;"
+      ]
+    },
+    {
+      "name": "799e2d4f",
+      "displayName": "top_10_categories_units",
+      "queryLines": [
+        "SELECT\r\n",
+        "    product_category_name,\r\n",
+        "    total_units_sold\r\n",
+        "FROM workspace.olist.gold_category_performance\r\n",
+        "WHERE product_category_name IS NOT NULL\r\n",
+        "ORDER BY total_units_sold DESC\r\n",
+        "LIMIT 10;"
+      ]
+    },
+    {
+      "name": "customer_repeat_analysis",
+      "displayName": "customer_repeat_analysis",
+      "queryLines": [
+        "SELECT\n",
+        "  CASE\n",
+        "    WHEN total_orders > 1 THEN 'Repeat Customers'\n",
+        "    ELSE 'One-Time Customers'\n",
+        "  END AS customer_type,\n",
+        "  COUNT(DISTINCT customer_unique_id) AS total_customers\n",
+        "FROM\n",
+        "  gold_customer_analytics\n",
+        "GROUP BY\n",
+        "  1;"
+      ],
+      "catalog": "workspace",
+      "schema": "olist"
+    },
+    {
+      "name": "top_customers_spending",
+      "displayName": "top_10_customers_spending",
+      "queryLines": [
+        "SELECT\n",
+        "  customer_unique_id,\n",
+        "  total_orders,\n",
+        "  total_spending,\n",
+        "  avg_order_value,\n",
+        "  total_items_purchased\n",
+        "FROM\n",
+        "  gold_customer_analytics\n",
+        "WHERE\n",
+        "  customer_unique_id IS NOT NULL\n",
+        "ORDER BY\n",
+        "  total_spending DESC\n",
+        "LIMIT 10;"
+      ],
+      "catalog": "workspace",
+      "schema": "olist"
+    },
+    {
+      "name": "top_sellers_revenue",
+      "displayName": "top_10_sellers_revenue",
+      "queryLines": [
+        "SELECT\n",
+        "  seller_id,\n",
+        "  total_revenue\n",
+        "FROM\n",
+        "  gold_seller_analytics\n",
+        "WHERE\n",
+        "  seller_id IS NOT NULL\n",
+        "ORDER BY\n",
+        "  total_revenue DESC\n",
+        "LIMIT 10;"
+      ],
+      "catalog": "workspace",
+      "schema": "olist"
+    },
+    {
+      "name": "seller_state_revenue",
+      "displayName": "seller_state_revenue",
+      "queryLines": [
+        "SELECT\n",
+        "  seller_state,\n",
+        "  total_revenue\n",
+        "FROM\n",
+        "  gold_seller_state_performance\n",
+        "WHERE\n",
+        "  seller_state IS NOT NULL\n",
+        "ORDER BY\n",
+        "  total_revenue DESC;"
+      ],
+      "catalog": "workspace",
+      "schema": "olist"
+    },
+    {
+      "name": "top_categories_avg_price",
+      "displayName": "top_10_categories_avg_price",
+      "queryLines": [
+        "SELECT\n",
+        "  product_category_name,\n",
+        "  avg_selling_price\n",
+        "FROM\n",
+        "  gold_category_performance\n",
+        "WHERE\n",
+        "  product_category_name IS NOT NULL\n",
+        "ORDER BY\n",
+        "  avg_selling_price DESC\n",
+        "LIMIT 10;"
+      ],
+      "catalog": "workspace",
+      "schema": "olist"
+    }
+  ],
+  "pages": [
+    {
+      "name": "69bcbddf",
+      "displayName": "Executive Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "total-orders",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "96cf5c92",
+                  "fields": [
+                    {
+                      "name": "sum(total_orders)",
+                      "expression": "SUM(`total_orders`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Total Orders"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_orders)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "delivered-orders",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "96cf5c92",
+                  "fields": [
+                    {
+                      "name": "sum(delivered_orders)",
+                      "expression": "SUM(`delivered_orders`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Delivered Orders"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(delivered_orders)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "total-revenue-brl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "96cf5c92",
+                  "fields": [
+                    {
+                      "name": "sum(total_revenue)",
+                      "expression": "SUM(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Total Revenue (BRL)"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_revenue)",
+                  "formatTemplate": "R$ {{ @formatted }}"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "total-freight-brl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "96cf5c92",
+                  "fields": [
+                    {
+                      "name": "sum(total_freight)",
+                      "expression": "SUM(`total_freight`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Total Freight (BRL)"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_freight)",
+                  "formatTemplate": "R$ {{ @formatted }}"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "total-order-value-brl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "96cf5c92",
+                  "fields": [
+                    {
+                      "name": "sum(total_order_value)",
+                      "expression": "SUM(`total_order_value`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Total Order Value (BRL)"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_order_value)",
+                  "formatTemplate": "R$ {{ @formatted }}"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 4,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "average-order-value-brl",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "96cf5c92",
+                  "fields": [
+                    {
+                      "name": "sum(avg_order_value)",
+                      "expression": "SUM(`avg_order_value`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Average Order Value (BRL)"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(avg_order_value)",
+                  "formatTemplate": "R$ {{ @formatted }}"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 4,
+            "width": 4,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "average-delivery-time-days",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "96cf5c92",
+                  "fields": [
+                    {
+                      "name": "sum(avg_delivery_days)",
+                      "expression": "SUM(`avg_delivery_days`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Average Delivery Time (Days)"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(avg_delivery_days)",
+                  "formatTemplate": "{{ @formatted }} days"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 4,
+            "width": 4,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "monthly-order-trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "04467d78",
+                  "fields": [
+                    {
+                      "name": "order_month",
+                      "expression": "`order_month`"
+                    },
+                    {
+                      "name": "sum(total_orders)",
+                      "expression": "SUM(`total_orders`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Monthly Order Trend"
+              },
+              "version": 3,
+              "mark": {
+                "lineShape": "linear",
+                "marker": {
+                  "shape": "circle"
+                }
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_month",
+                  "axis": {
+                    "labelAngle": 90
+                  },
+                  "displayName": "Order Month",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "natural-order"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_orders)",
+                  "displayName": "Number of Orders",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": false
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "order-status-distribution",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ef0b8383",
+                  "fields": [
+                    {
+                      "name": "sum(total_orders)",
+                      "expression": "SUM(`total_orders`)"
+                    },
+                    {
+                      "name": "order_status",
+                      "expression": "`order_status`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Order Status Distribution"
+              },
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(total_orders)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Orders"
+                },
+                "color": {
+                  "fieldName": "order_status",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 14,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "on-time-vs-late-delivery",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "178136e5",
+                  "fields": [
+                    {
+                      "name": "delivery_status",
+                      "expression": "`delivery_status`"
+                    },
+                    {
+                      "name": "sum(total_orders)",
+                      "expression": "SUM(`total_orders`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "On-Time vs Late Delivery"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "delivery_status",
+                  "displayName": "Delivery Status",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_orders)",
+                  "displayName": "Total Orders",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "insights",
+      "displayName": "Product, Customer & Seller Insights",
+      "layout": [
+        {
+          "widget": {
+            "name": "top-categories-revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "c80c2f96",
+                  "fields": [
+                    {
+                      "name": "product_category_name",
+                      "expression": "`product_category_name`"
+                    },
+                    {
+                      "name": "sum(total_revenue)",
+                      "expression": "SUM(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Top 10 Product Categories by Revenue",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "product_category_name",
+                  "displayName": "Product Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_revenue)",
+                  "formatTemplate": "R$ {{ @formatted }}",
+                  "displayName": "Total Revenue (BRL)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "product_category_name",
+                  "displayName": "Product Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top-categories-units",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "799e2d4f",
+                  "fields": [
+                    {
+                      "name": "product_category_name",
+                      "expression": "`product_category_name`"
+                    },
+                    {
+                      "name": "sum(total_units_sold)",
+                      "expression": "SUM(`total_units_sold`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Categories by Units Sold"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "product_category_name",
+                  "displayName": "Product Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_units_sold)",
+                  "displayName": "Units Sold",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "product_category_name",
+                  "displayName": "Product Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top-categories-avg-price",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_categories_avg_price",
+                  "fields": [
+                    {
+                      "name": "product_category_name",
+                      "expression": "`product_category_name`"
+                    },
+                    {
+                      "name": "sum(avg_selling_price)",
+                      "expression": "SUM(`avg_selling_price`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Top 10 Categories by Average Selling Price",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "product_category_name",
+                  "displayName": "Product Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(avg_selling_price)",
+                  "formatTemplate": "R$ {{ @formatted }}",
+                  "displayName": "Average Selling Price (BRL)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "product_category_name",
+                  "displayName": "Product Category",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "one-time-vs-repeat-customers",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "customer_repeat_analysis",
+                  "fields": [
+                    {
+                      "name": "sum(total_customers)",
+                      "expression": "SUM(`total_customers`)"
+                    },
+                    {
+                      "name": "customer_type",
+                      "expression": "`customer_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "One-Time vs Repeat Customers"
+              },
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "sum(total_customers)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Customers"
+                },
+                "color": {
+                  "fieldName": "customer_type",
+                  "displayName": "Customer Type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 6,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top-customers-spending",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_customers_spending",
+                  "fields": [
+                    {
+                      "name": "customer_unique_id",
+                      "expression": "`customer_unique_id`"
+                    },
+                    {
+                      "name": "sum(total_spending)",
+                      "expression": "SUM(`total_spending`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Top 10 Customers by Spending",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "customer_unique_id",
+                  "displayName": "Customer",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_spending)",
+                  "formatTemplate": "R$ {{ @formatted }}",
+                  "displayName": "Total Spending (BRL)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "customer_unique_id",
+                  "displayName": "Customer",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top-sellers-revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_sellers_revenue",
+                  "fields": [
+                    {
+                      "name": "seller_id",
+                      "expression": "`seller_id`"
+                    },
+                    {
+                      "name": "sum(total_revenue)",
+                      "expression": "SUM(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Top 10 Sellers by Revenue",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "seller_id",
+                  "displayName": "Seller",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_revenue)",
+                  "formatTemplate": "R$ {{ @formatted }}",
+                  "displayName": "Total Revenue (BRL)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "seller_id",
+                  "displayName": "Seller",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "revenue-by-seller-state",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "seller_state_revenue",
+                  "fields": [
+                    {
+                      "name": "seller_state",
+                      "expression": "`seller_state`"
+                    },
+                    {
+                      "name": "sum(total_revenue)",
+                      "expression": "SUM(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Revenue by Seller State",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "seller_state",
+                  "displayName": "Seller State",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(total_revenue)",
+                  "formatTemplate": "R$ {{ @formatted }}",
+                  "displayName": "Total Revenue (BRL)",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "seller_state",
+                  "displayName": "Seller State",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
